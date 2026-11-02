@@ -1,0 +1,23 @@
+diff --git a/src/online/http_request.hpp b/src/online/http_request.hpp
+index 332c9bea3a2c97a0ecf4f07310524faeeeebcd53..a612c2a209e817d10bb6b0a9b3bf8ceefb23bfbc 100644
+--- a/src/online/http_request.hpp
++++ b/src/online/http_request.hpp
+@@ -65,7 +65,7 @@ namespace Online
+         /** String to store the received data in. */
+         std::string m_string_buffer;
+ 
+-#ifdef APPLE_NETWORK_LIBRARIES
++#if defined(APPLE_NETWORK_LIBRARIES) || defined(__EMSCRIPTEN__)
+         std::string m_error_string;
+ #endif
+ 
+diff --git a/src/online/http_request_curl.cpp b/src/online/http_request_curl.cpp
+index 6aafc04c3f350646a0677fd068496ae668c54162..cf43d8da988287ad8d4a2c8771f86ecf0cfd85aa 100644
+--- a/src/online/http_request_curl.cpp
++++ b/src/online/http_request_curl.cpp
+@@ -1,4 +1,4 @@
+-#ifndef APPLE_NETWORK_LIBRARIES
++#if !defined(APPLE_NETWORK_LIBRARIES) && !defined(__EMSCRIPTEN__)
+ 
+ #ifdef WIN32
+ #  define WIN32_LEAN_AND_MEAN

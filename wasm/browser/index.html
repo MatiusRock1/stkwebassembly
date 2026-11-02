@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The engine files sit next to this page (wasm/package.sh output). -->
+<meta name="engine-base" content="./">
+<title>SuperTuxKart WebAssembly</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #111; color: #eee; font: 14px/1.5 system-ui, sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 16px; }
+  .play-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 0; }
+  button { font: inherit; padding: 8px 14px; cursor: pointer; }
+  button:disabled { cursor: default; opacity: .4; }
+  #status { color: #aaa; margin-left: auto; }
+  #game-surface { position: relative; background: #000; }
+  #canvas { display: block; width: 100%; aspect-ratio: 16 / 9; }
+  #game-surface:fullscreen { display: flex; align-items: center; justify-content: center; }
+  #game-surface:fullscreen #canvas { width: min(100vw, 177.78vh); height: min(100vh, 56.25vw); }
+  .game-idle, #loading { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; flex-direction: column; text-align: center; padding: 20px; }
+  .game-idle { pointer-events: none; }
+  #loading { background: #000d; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SuperTuxKart WebAssembly</h1>
+  <div class="play-controls">
+    <button id="start">Start SuperTuxKart</button>
+    <button id="fullscreen" disabled>Fullscreen</button>
+    <button id="close" disabled>Close game</button>
+    <span id="status" role="status" aria-live="polite">Experimental WebAssembly build of the original game.</span>
+  </div>
+  <div id="game-surface">
+    <div class="game-idle"><p>Press Start. The first start downloads about 350 MB of game data.</p></div>
+    <div id="loading" hidden><div id="loading-text" role="status" aria-live="polite"></div></div>
+    <canvas id="canvas" width="1280" height="720" tabindex="0" aria-label="Game canvas"></canvas>
+  </div>
+  <p>Arrow keys drive, Space fires, N uses nitro, V skids, Escape pauses.</p>
+</main>
+<script type="module" src="application.mjs"></script>
+</body>
+</html>

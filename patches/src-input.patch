@@ -1,0 +1,50 @@
+diff --git a/src/input/gamepad_config.cpp b/src/input/gamepad_config.cpp
+index 4733cff4b3050b19f6222ad9ff32bbcd0b6820de..a594bf0c246d8b77ce22ffa017734ed5990fa981 100644
+--- a/src/input/gamepad_config.cpp
++++ b/src/input/gamepad_config.cpp
+@@ -538,8 +538,21 @@ void GamepadConfig::initSDLMapping()
+         // Split joycons will only have one minus button (left joycon)
+         setBindingFromTuple(PA_RESCUE, actions_map.at(SDL_CONTROLLER_BUTTON_LEFTSTICK));
+ #else
+-        setBindingFromTuple(PA_ACCEL, actions_map.at(SDL_CONTROLLER_BUTTON_Y));
+-        setBindingFromTuple(PA_BRAKE, actions_map.at(SDL_CONTROLLER_BUTTON_X));
++#ifdef __EMSCRIPTEN__
++        // Triggers drive the kart, like in most racing games; pads without
++        // them keep Y and X
++        if (actions_map.find(SDL_CONTROLLER_AXIS_TRIGGERRIGHT_UP) != actions_map.end() &&
++            actions_map.find(SDL_CONTROLLER_AXIS_TRIGGERLEFT_UP) != actions_map.end())
++        {
++            setBindingFromTuple(PA_ACCEL, actions_map.at(SDL_CONTROLLER_AXIS_TRIGGERRIGHT_UP));
++            setBindingFromTuple(PA_BRAKE, actions_map.at(SDL_CONTROLLER_AXIS_TRIGGERLEFT_UP));
++        }
++        else
++#endif
++        {
++            setBindingFromTuple(PA_ACCEL, actions_map.at(SDL_CONTROLLER_BUTTON_Y));
++            setBindingFromTuple(PA_BRAKE, actions_map.at(SDL_CONTROLLER_BUTTON_X));
++        }
+         setBindingFromTuple(PA_FIRE, actions_map.at(SDL_CONTROLLER_BUTTON_B));
+         setBindingFromTuple(PA_LOOK_BACK, actions_map.at(SDL_CONTROLLER_BUTTON_A));
+         setBindingFromTuple(PA_RESCUE, actions_map.at(SDL_CONTROLLER_BUTTON_BACK));
+diff --git a/src/input/sdl_controller.cpp b/src/input/sdl_controller.cpp
+index 19534d886c525d005d2d492399b3d86d74c9852e..356e281d7a4cdba9222ec2f95e88ed59d2bf8302 100644
+--- a/src/input/sdl_controller.cpp
++++ b/src/input/sdl_controller.cpp
+@@ -177,6 +177,17 @@ SDLController::SDLController(int device_id)
+     cfg->initSDLController(mapping_string, m_buttons, m_axes, m_hats);
+     if (created)
+         cfg->initSDLMapping();
++#ifdef __EMSCRIPTEN__
++    // Configs saved while Y and X were the default accelerate and brake
++    // switch once to the trigger defaults; customised layouts are kept
++    else if (cfg->getBindingAsString(PA_ACCEL) == L"Y" &&
++             cfg->getBindingAsString(PA_BRAKE) == L"X")
++    {
++        cfg->initSDLMapping();
++        // Saved below like a new configuration
++        created = cfg->getBindingAsString(PA_ACCEL) != L"Y";
++    }
++#endif
+     cfg->setPlugged();
+ 
+     for (int i = 0; i < dm->getGamePadAmount(); i++)

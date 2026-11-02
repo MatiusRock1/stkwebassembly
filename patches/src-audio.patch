@@ -1,0 +1,160 @@
+diff --git a/src/audio/music_ogg.cpp b/src/audio/music_ogg.cpp
+index 8fd5a8bcc16e843996dae9dc48755d5eca3ced9d..64501565a5bc6692881b3a329fbcb889a03bbeaa 100644
+--- a/src/audio/music_ogg.cpp
++++ b/src/audio/music_ogg.cpp
+@@ -32,7 +32,8 @@
+ MusicOggStream::MusicOggStream(float loop_start, float loop_end)
+ {
+     //m_oggStream= NULL;
+-    m_soundBuffers[0] = m_soundBuffers[1]= 0;
++    for (int i = 0; i < m_buffer_count; i++)
++        m_soundBuffers[i] = 0;
+     m_soundSource     = -1;
+     m_pausedMusic     = true;
+     m_playing.store(false);
+@@ -142,7 +143,7 @@ bool MusicOggStream::load(const std::string& filename)
+     }
+ #endif
+ 
+-    alGenBuffers(2, m_soundBuffers);
++    alGenBuffers(m_buffer_count, m_soundBuffers);
+     if (check("alGenBuffers") == false) return false;
+ 
+     alGenSources(1, &m_soundSource);
+@@ -191,7 +192,7 @@ bool MusicOggStream::release()
+     empty();
+     alDeleteSources(1, &m_soundSource);
+     check("alDeleteSources");
+-    alDeleteBuffers(2, m_soundBuffers);
++    alDeleteBuffers(m_buffer_count, m_soundBuffers);
+     check("alDeleteBuffers");
+ 
+     // Handle error correctly
+@@ -226,13 +227,13 @@ bool MusicOggStream::playMusic()
+     if(isPlaying())
+         return true;
+ 
+-    if(!streamIntoBuffer(m_soundBuffers[0]))
+-        return false;
+-
+-    if(!streamIntoBuffer(m_soundBuffers[1]))
+-        return false;
++    for (int i = 0; i < m_buffer_count; i++)
++    {
++        if(!streamIntoBuffer(m_soundBuffers[i]))
++            return false;
++    }
+ 
+-    alSourceQueueBuffers(m_soundSource, 2, m_soundBuffers);
++    alSourceQueueBuffers(m_soundSource, m_buffer_count, m_soundBuffers);
+ 
+     alSourcePlay(m_soundSource);
+     m_pausedMusic = false;
+diff --git a/src/audio/music_ogg.hpp b/src/audio/music_ogg.hpp
+index af710bc50085891eae0f213717d08c67319877c5..9dda787c7ab581f1da00173b8015e12b723e9d02 100644
+--- a/src/audio/music_ogg.hpp
++++ b/src/audio/music_ogg.hpp
+@@ -90,7 +90,14 @@ private:
+     std::atomic_bool m_playing;
+     std::atomic_bool m_play_initialized;
+ 
+-    ALuint m_soundBuffers[2];
++#ifdef __EMSCRIPTEN__
++    // A slow frame in the browser delays the refill; four quarter-second
++    // buffers keep a second queued without decoding a long block at once
++    static const int m_buffer_count = 4;
++#else
++    static const int m_buffer_count = 2;
++#endif
++    ALuint m_soundBuffers[m_buffer_count];
+     ALuint m_soundSource;
+     ALenum nb_channels;
+ 
+diff --git a/src/audio/sfx_manager.cpp b/src/audio/sfx_manager.cpp
+index 7b5cf8a2a4e363eeb296c0fe3dbfb311859af408..d88e6c5810f5cfe50d733af263a38a0b800e7085 100644
+--- a/src/audio/sfx_manager.cpp
++++ b/src/audio/sfx_manager.cpp
+@@ -95,7 +95,10 @@ SFXManager::SFXManager()
+     {
+         // The thread is created even if there atm sfx are disabled
+         // (since the user might enable it later).
+-#ifndef __SWITCH__
++        // In the browser OpenAL lives on the main thread: every AL call of
++        // another thread waits for it, so the sfx thread fell behind (music
++        // stopped, sfx throttled). update() runs the commands there instead.
++#if !defined(__SWITCH__) && !defined(__EMSCRIPTEN__)
+         m_thread = std::thread(std::bind(mainLoop, this));
+ #endif
+         setMasterSFXVolume( UserConfigParams::m_sfx_volume );
+@@ -111,7 +114,7 @@ SFXManager::SFXManager()
+  */
+ SFXManager::~SFXManager()
+ {
+-#if defined(ENABLE_SOUND) && !defined(__SWITCH__)
++#if defined(ENABLE_SOUND) && !defined(__SWITCH__) && !defined(__EMSCRIPTEN__)
+     if (UserConfigParams::m_enable_sound)
+     {
+         m_thread.join();
+@@ -328,6 +331,9 @@ void SFXManager::stopThread()
+         queue(SFX_EXIT);
+         // Make sure the thread wakes up.
+         m_condition_variable.notify_one();
++#ifdef __EMSCRIPTEN__
++        mainLoop(this);
++#endif
+     }
+     else
+ #endif
+@@ -348,7 +354,7 @@ void SFXManager::mainLoop(void *obj)
+     if (!UserConfigParams::m_enable_sound)
+         return;
+         
+-#ifndef __SWITCH__
++#if !defined(__SWITCH__) && !defined(__EMSCRIPTEN__)
+     VS::setThreadName("SFXManager");
+ #endif
+     SFXManager *me = (SFXManager*)obj;
+@@ -363,6 +369,9 @@ void SFXManager::mainLoop(void *obj)
+ #ifdef __SWITCH__
+            // Don't spend too much time working on audio
+            ++iterCount != 30 && !me->m_sfx_commands.getData().empty()
++#elif defined(__EMSCRIPTEN__)
++           // Called once per frame on the main thread: run what is queued
++           !me->m_sfx_commands.getData().empty()
+ #else
+            me->m_sfx_commands.getData().empty() || me->m_sfx_commands.getData().front()->m_command!=SFX_EXIT
+ #endif
+@@ -374,7 +383,7 @@ void SFXManager::mainLoop(void *obj)
+         // Wait in cond_wait for a request to arrive. The 'while' is necessary
+         // since "spurious wakeups from the pthread_cond_wait ... may occur"
+         // (pthread_cond_wait man page)!
+-#ifndef __SWITCH__
++#if !defined(__SWITCH__) && !defined(__EMSCRIPTEN__)
+         while (empty)
+         {
+             me->m_condition_variable.wait(ul);
+@@ -464,6 +473,7 @@ void SFXManager::mainLoop(void *obj)
+         current = NULL;
+         PROFILER_POP_CPU_MARKER();
+         PROFILER_PUSH_CPU_MARKER("yield", 0, 0, 255);
++#ifndef __EMSCRIPTEN__
+         if (empty_queue && me->sfxAllowed())
+         {
+             // Wait some time to let other threads run, then queue an
+@@ -473,6 +483,7 @@ void SFXManager::mainLoop(void *obj)
+             t = StkTime::getMonoTimeMs() - t;
+             me->queue(SFX_UPDATE, (SFXBase*)NULL, float(t / 1000.0));
+         }
++#endif
+         ul = me->m_sfx_commands.acquireMutex();
+         PROFILER_POP_CPU_MARKER();
+     }   // while
+@@ -808,7 +819,7 @@ void SFXManager::update()
+     // Wake up the sfx thread to handle all queued up audio commands.
+     m_condition_variable.notify_one();
+ 
+-#ifdef __SWITCH__
++#if defined(__SWITCH__) || defined(__EMSCRIPTEN__)
+     mainLoop(this);
+ #endif
+ #endif

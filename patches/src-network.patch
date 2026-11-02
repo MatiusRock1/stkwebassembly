@@ -1,0 +1,59 @@
+diff --git a/src/network/network_config.cpp b/src/network/network_config.cpp
+index 6d3f676cfb85de47403b944af43e76fa1f70d769..89c21f80c40f4632ace459a33682888b47088c54 100644
+--- a/src/network/network_config.cpp
++++ b/src/network/network_config.cpp
+@@ -667,6 +667,10 @@ cleanup:
+     free(quest);
+     dns_so_close(so);
+     dns_resconf_close(conf);
++#elif defined(__EMSCRIPTEN__)
++    // Browsers cannot do DNS SRV queries
++    Log::warn("NetworkConfig", "DNS SRV lookup of %s is not supported in "
++        "the browser.", dns.c_str());
+ #else
+ #define SRV_WEIGHT (RRFIXEDSZ+2)
+ #define SRV_PORT (RRFIXEDSZ+4)
+diff --git a/src/network/protocols/connect_to_server.cpp b/src/network/protocols/connect_to_server.cpp
+index 4c3fe8fee826e7c231d9d18f0dad211760b8ab92..b194cc14cde1a55aab1cf377a08958566f0cf672 100644
+--- a/src/network/protocols/connect_to_server.cpp
++++ b/src/network/protocols/connect_to_server.cpp
+@@ -795,6 +795,8 @@ cleanup:
+     dns_so_close(so);
+     dns_resconf_close(conf);
+ 
++#elif defined(__EMSCRIPTEN__)
++    // Browsers cannot do DNS TXT queries
+ #else
+     const std::string& utf8name = StringUtils::wideToUtf8(m_server->getName());
+     unsigned char response[512] = {};
+diff --git a/src/network/servers_manager.cpp b/src/network/servers_manager.cpp
+index 6d1795be33b3860000fe7b7a5d16f4a2569a795c..f29e4be385bee8278462915ca82306e251d43fe5 100644
+--- a/src/network/servers_manager.cpp
++++ b/src/network/servers_manager.cpp
+@@ -254,7 +254,12 @@ std::shared_ptr<ServerList> ServersManager::getLANRefreshRequest() const
+             // Wait for up to 0.5 seconds to receive an answer from
+             // any local servers.
+             uint64_t start_time = StkTime::getMonoTimeMs();
++#ifdef __EMSCRIPTEN__
++            // Answers come through a WebSocket that is opened first
++            const uint64_t DURATION = 4000;
++#else
+             const uint64_t DURATION = 1000;
++#endif
+             int cur_server_id = 0;
+             // Use a map with the server name as key to automatically remove
+             // duplicated answers from a server (since we potentially do
+@@ -404,6 +409,13 @@ void ServersManager::addAllBroadcastAddresses(const SocketAddress &a, int len,
+ std::vector<SocketAddress> ServersManager::getBroadcastAddresses(bool ipv6)
+ {
+     std::vector<SocketAddress> result;
++#ifdef __EMSCRIPTEN__
++    // In the browser every address opens its own WebSocket to the relay of
++    // the site, which answers for all its servers: one is enough.
++    result.emplace_back(std::string("255.255.255.255"),
++        stk_config->m_server_discovery_port);
++    return result;
++#endif
+ #ifdef __SWITCH__
+     uint32_t addr;
+     uint32_t u;

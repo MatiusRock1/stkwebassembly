@@ -1,0 +1,12 @@
+{
+  "stk-assets.zip": {
+    "url": "https://github.com/supertuxkart/stk-assets-mobile/releases/download/1.5/stk-assets.zip",
+    "sha256": "05477fc253a82eb6766888f4a514c9660d045838bf39634f4d1744f7b5fab272",
+    "source": "stk-assets-mobile release 1.5, standard quality (karts, tracks, music, textures)"
+  },
+  "extra-assets/textures/stk_noise_simplex.png": {
+    "url": "https://sourceforge.net/p/supertuxkart/code/18627/tree/stk-assets/textures/stk_noise_simplex.png?format=raw",
+    "sha256": "e8ce247d8b27d6d00a82361fa000b3d271d2bdc1fabb0fe6884da57de94099ec",
+    "source": "stk-assets SVN r18627; the speed streaks code (after 1.5) loads it at startup"
+  }
+}

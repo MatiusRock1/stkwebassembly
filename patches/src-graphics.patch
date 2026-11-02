@@ -1,0 +1,173 @@
+diff --git a/src/graphics/2dutils.cpp b/src/graphics/2dutils.cpp
+index 2621b150d6a8fb7fac696c4287f41338e9e7c034..c37766cc49c839b47799bf53e953adefd80bdbfa 100644
+--- a/src/graphics/2dutils.cpp
++++ b/src/graphics/2dutils.cpp
+@@ -29,6 +29,17 @@
+ #include <IVideoDriver.h>
+ #include <cmath>
+ 
++// ----------------------------------------------------------------------------
++/** Clears the GL error flag after a 2D draw. In WebGL getError waits for the
++ *  GPU process: called after every HUD image it took a quarter of each frame
++ *  on desktop and made phones lag, and the result is discarded anyway. */
++static void clearGLError()
++{
++#ifndef __EMSCRIPTEN__
++    glGetError();
++#endif
++}   // clearGLError
++
+ // ============================================================================
+ class Primitive2DList : public TextureShader<Primitive2DList, 1, core::vector2df>
+ {
+@@ -157,7 +168,7 @@ static void drawTexColoredQuad(const video::ITexture *texture,
+     glBindVertexArray(0);
+ 
+ 
+-    glGetError();
++    clearGLError();
+ }   // drawTexColoredQuad
+ 
+ // ----------------------------------------------------------------------------
+@@ -180,7 +191,7 @@ static void drawTexQuad(GLuint texture, float width, float height,
+     glBindVertexArray(0);
+     glBindBuffer(GL_ARRAY_BUFFER, 0);
+ 
+-    glGetError();
++    clearGLError();
+ }   // drawTexQuad
+ 
+ 
+@@ -292,7 +303,7 @@ void draw2DImage(const video::ITexture* texture,
+         glDisable(GL_SCISSOR_TEST);
+     glUseProgram(0);
+ 
+-    glGetError();
++    clearGLError();
+ }   // draw2DImage
+ 
+ // ----------------------------------------------------------------------------
+@@ -392,7 +403,7 @@ void draw2DImage(const video::ITexture* texture,
+         glDisable(GL_SCISSOR_TEST);
+     glUseProgram(0);
+ 
+-    glGetError();
++    clearGLError();
+ }   // draw2DImage
+ 
+ // ----------------------------------------------------------------------------
+@@ -574,7 +585,7 @@ void GL32_draw2DRectangle(video::SColor color, const core::rect<s32>& position,
+         glDisable(GL_SCISSOR_TEST);
+     glUseProgram(0);
+ 
+-    glGetError();
++    clearGLError();
+ }   // GL32_draw2DRectangle
+ 
+ void preloadShaders()
+diff --git a/src/graphics/draw_calls.hpp b/src/graphics/draw_calls.hpp
+index eda4521208d933723fa74721b8657a142b7e40f9..fa47bac8a47ca9e6fb4e98107d77c0e90b3bb8b7 100644
+--- a/src/graphics/draw_calls.hpp
++++ b/src/graphics/draw_calls.hpp
+@@ -64,7 +64,14 @@ public:
+ 
+     void renderBoundingBoxes();
+ 
++#ifdef __EMSCRIPTEN__
++    // WebGL copies buffer data on upload and signals syncs only between
++    // frames, so the instance data needs no fence (and calling
++    // glClientWaitSync through glad traps with a signature mismatch).
++    void setFenceSync() {}
++#else
+     void setFenceSync() { m_sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0); }
++#endif
+ };
+ 
+ #endif   // !SERVER_ONLY
+diff --git a/src/graphics/graphics_restrictions.cpp b/src/graphics/graphics_restrictions.cpp
+index 45e6ca0c5f7efb7d954e6714de171761e54c2449..b1b879c5b60515536cb639ce4f6982539c19b052 100644
+--- a/src/graphics/graphics_restrictions.cpp
++++ b/src/graphics/graphics_restrictions.cpp
+@@ -416,7 +416,9 @@ public:
+         // -----------
+         if(m_os.size()>0)
+         {
+-#if defined(__linux__) && !defined(ANDROID)
++#if defined(__EMSCRIPTEN__)
++            if(m_os!="web") return false;
++#elif defined(__linux__) && !defined(ANDROID)
+             if(m_os!="linux") return false;
+ #elif defined(IOS_STK)
+             if(m_os!="ios") return false;
+diff --git a/src/graphics/shared_gpu_objects.cpp b/src/graphics/shared_gpu_objects.cpp
+index 338081d2a0f070cac49c2f99160adbcb74d24e28..2f9105f66b0894a3ed42455dc36191e9c7554b0a 100644
+--- a/src/graphics/shared_gpu_objects.cpp
++++ b/src/graphics/shared_gpu_objects.cpp
+@@ -140,7 +140,8 @@ void SharedGPUObjects::initShadowVPMUBO()
+     assert(CVS->isARBUniformBufferObjectUsable());
+     glGenBuffers(1, &m_View_projection_matrices_ubo);
+     glBindBuffer(GL_UNIFORM_BUFFER, m_View_projection_matrices_ubo);
+-    glBufferData(GL_UNIFORM_BUFFER, (16 * 9 + 2) * sizeof(float), 0,
++    // std140 rounds the block to 16 bytes; mobile GLES rejects 584 < 592
++    glBufferData(GL_UNIFORM_BUFFER, (16 * 9 + 4) * sizeof(float), 0,
+                  GL_STREAM_DRAW);
+     glBindBuffer(GL_UNIFORM_BUFFER, 0);
+ }   // initShadowVPMUBO
+diff --git a/src/graphics/sp/sp_base.cpp b/src/graphics/sp/sp_base.cpp
+index 3c2e722b6987e81561155b52b9544cc976d438f4..ab8e8918f1e06e2c62c8fa94820863522da3b543 100644
+--- a/src/graphics/sp/sp_base.cpp
++++ b/src/graphics/sp/sp_base.cpp
+@@ -496,7 +496,8 @@ void init()
+         {
+             glGenBuffers(1, &sp_mat_ubo[i][j]);
+             glBindBuffer(GL_UNIFORM_BUFFER, sp_mat_ubo[i][j]);
+-            glBufferData(GL_UNIFORM_BUFFER, (16 * 9 + 2) * sizeof(float), NULL,
++            // std140 rounds the block to 16 bytes; mobile GLES rejects 584 < 592
++            glBufferData(GL_UNIFORM_BUFFER, (16 * 9 + 4) * sizeof(float), NULL,
+                 GL_DYNAMIC_DRAW);
+         }
+     }
+@@ -504,6 +505,17 @@ void init()
+     glGenBuffers(1, &sp_fog_ubo);
+     resetEmptyFogColor();
+     glBindBufferBase(GL_UNIFORM_BUFFER, 2, sp_fog_ubo);
++#ifdef __EMSCRIPTEN__
++    // WebGL refuses draws whose program uses a uniform block without a buffer
++    // bound. Every shader includes header.txt (Matrices, LightingData), also
++    // the GUI ones, so keep valid buffers bound before any scene is rendered.
++    glBindBufferBase(GL_UNIFORM_BUFFER, 0, sp_mat_ubo[0][0]);
++    if (CVS->isARBUniformBufferObjectUsable())
++    {
++        glBindBufferBase(GL_UNIFORM_BUFFER, 1,
++            SharedGPUObjects::getLightingDataUBO());
++    }
++#endif
+ 
+     glBindBuffer(GL_UNIFORM_BUFFER, 0);
+     initSamplers();
+diff --git a/src/graphics/sp/sp_texture_manager.cpp b/src/graphics/sp/sp_texture_manager.cpp
+index 5e1e822fb8c7d4af6b2be8ba4856f71cdfebd52b..b6b9bd3ae3f7af871acf44872e11ebe7d918bd86 100644
+--- a/src/graphics/sp/sp_texture_manager.cpp
++++ b/src/graphics/sp/sp_texture_manager.cpp
+@@ -119,12 +119,19 @@ void SPTextureManager::checkForGLCommand(bool before_scene)
+         // if return false, re-added it to the back
+         if (gl_cmd() == false)
+         {
+-            std::lock_guard<std::mutex> lock(m_gl_cmd_mutex);
+-            m_gl_cmd_functions.push_back(gl_cmd);
++            {
++                std::lock_guard<std::mutex> lock(m_gl_cmd_mutex);
++                m_gl_cmd_functions.push_back(gl_cmd);
++            }
+             if (!before_scene)
+             {
+                 return;
+             }
++#ifdef __EMSCRIPTEN__
++            // In the browser the loading threads read files through the main
++            // thread, which serves them only while it sleeps or waits.
++            std::this_thread::sleep_for(std::chrono::milliseconds(1));
++#endif
+         }
+         else
+         {

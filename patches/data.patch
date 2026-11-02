@@ -1,0 +1,12 @@
+diff --git a/data/graphical_restrictions.xml b/data/graphical_restrictions.xml
+index b3ade708cd8bd2f90454e8901733b0c1c6415cc6..48540f7e38db2e38d948b19298fc14d3ddc0557a 100644
+--- a/data/graphical_restrictions.xml
++++ b/data/graphical_restrictions.xml
+@@ -43,4 +43,7 @@
+   <card contains="PowerVR SGX 535" disable="NpotTextures"/>
+   <card contains="PowerVR SGX 540" disable="NpotTextures"/>
+   <card contains="PowerVR SGX 545" disable="NpotTextures"/>
++  <!-- WebGL refuses draws that sample a texture attached to the bound
++       framebuffer, which the deferred pipeline does with the depth buffer. -->
++  <card                           os="web"                         disable="AdvancedPipeline"/>
+ </graphical-restrictions>

@@ -1,0 +1,197 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index bdfd63bf5a7a70eee0147c5f9c90c67f32e2cf2b..0cf782b8f3b7276eb956691c9ab95fb427fb16b8 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -296,6 +296,10 @@ extern "C" {
+ 
+ #include <IrrlichtDevice.h>
+ 
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#endif
++
+ static void cleanSuperTuxKart();
+ static void cleanUserConfig();
+ void runUnitTests();
+@@ -1914,6 +1918,35 @@ void initUserConfig()
+     file_manager = new FileManager();
+     user_config  = new UserConfig();     // needs file_manager
+     user_config->loadConfig();
++#ifdef __EMSCRIPTEN__
++    // Phones and tablets: the race GUI draws the touch steering wheel and
++    // buttons (only while racing), and textures stay small like on Android,
++    // so the tab is not killed for memory. Desktop browsers are unchanged.
++    bool touch_screen = EM_ASM_INT({
++        return navigator.maxTouchPoints > 0 &&
++               matchMedia('(pointer: coarse)').matches ? 1 : 0;
++    });
++    if (touch_screen)
++    {
++        UserConfigParams::m_multitouch_active = 2;
++        UserConfigParams::m_multitouch_draw_gui = true;
++        if (UserConfigParams::m_multitouch_controls ==
++            MULTITOUCH_CONTROLS_UNDEFINED)
++        {
++            UserConfigParams::m_multitouch_controls =
++                MULTITOUCH_CONTROLS_STEERING_WHEEL;
++        }
++        // Browsers open no system keyboard for the canvas; use STK's own
++        UserConfigParams::m_screen_keyboard = 1;
++        UserConfigParams::m_max_texture_size = 256;
++        UserConfigParams::m_high_definition_textures = false;
++        UserConfigParams::m_light_scatter = false;
++    }
++    else
++    {
++        UserConfigParams::m_multitouch_active = 0;
++    }
++#endif
+     // Some parts of the file manager needs user config (paths for models
+     // depend on artist debug flag). So init the rest of the file manager
+     // after reading the user config file.
+@@ -2478,7 +2511,12 @@ int main(int argc, char *argv[])
+             }
+             else
+             {
++#ifndef __EMSCRIPTEN__
++                // In the browser the window is measured in CSS pixels, and a
++                // phone in landscape is about 400 high: this stretched the
++                // canvas past the page and squashed the picture
+                 irr_driver->getDevice()->setWindowMinimumSize(480, 480);
++#endif
+             }
+             #ifdef MOBILE_STK
+             if (UserConfigParams::m_multitouch_controls == MULTITOUCH_CONTROLS_UNDEFINED)
+diff --git a/src/main_loop.cpp b/src/main_loop.cpp
+index b940e5224b2f4abf0e63621d23eabcbc58157f10..c1f8d4406488a84363f0d8cbe53061d2885f3908 100644
+--- a/src/main_loop.cpp
++++ b/src/main_loop.cpp
+@@ -67,6 +67,10 @@
+ #include <unistd.h>
+ #endif
+ 
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#endif
++
+ #ifdef __SWITCH__
+ extern "C" {
+ #define Event libnx_Event
+@@ -101,7 +105,8 @@ LRESULT CALLBACK separateProcessProc(_In_ HWND hwnd, _In_ UINT uMsg,
+ // ----------------------------------------------------------------------------
+ MainLoop::MainLoop(unsigned parent_pid, bool download_assets)
+         : m_abort(false), m_request_abort(false), m_paused(false),
+-          m_ticks_adjustment(0), m_parent_pid(parent_pid)
++          m_ticks_adjustment(0), m_parent_pid(parent_pid),
++          m_left_over_time(0)
+ {
+     m_curr_time       = std::chrono::steady_clock::now();
+     m_prev_time       = std::chrono::steady_clock::now();
+@@ -402,8 +407,19 @@ void MainLoop::run()
+     m_curr_time = std::chrono::steady_clock::now();
+     // DT keeps track of the leftover time, since the race update
+     // happens in fixed timesteps
+-    double left_over_time = 0;
++    m_left_over_time = 0;
+ 
++#ifdef __EMSCRIPTEN__
++    // The browser drives the frames: each one runs to completion and then
++    // returns control to the event loop. This call does not return.
++    emscripten_set_main_loop_arg([](void* self)
++    {
++        MainLoop* ml = static_cast<MainLoop*>(self);
++        ml->runFrame();
++        if (ml->m_abort)
++            emscripten_cancel_main_loop();
++    }, this, 0, true);
++#else
+ #ifdef WIN32
+     HANDLE parent = 0;
+     if (m_parent_pid != 0)
+@@ -454,13 +470,31 @@ void MainLoop::run()
+         }
+ #endif
+ 
++        runFrame();
++    }  // while !m_abort
++
++#ifdef WIN32
++    if (parent != 0 && parent != INVALID_HANDLE_VALUE)
++        CloseHandle(parent);
++#endif
++#endif
++}   // run
++
++//-----------------------------------------------------------------------------
++/** Runs one iteration of the main loop, see run() for the sequence.
++ */
++void MainLoop::runFrame()
++{
++    // Indented as the former loop body in run(), which keeps the
++    // WebAssembly port's patch small.
++    {
+         PROFILER_PUSH_CPU_MARKER("Main loop", 0xFF, 0x00, 0xF7);
+         TimePoint frame_start = std::chrono::steady_clock::now();
+ 
+-        left_over_time += getLimitedDt();
+-        int num_steps   = stk_config->time2Ticks(left_over_time);
++        m_left_over_time += getLimitedDt();
++        int num_steps   = stk_config->time2Ticks(m_left_over_time);
+         float dt = stk_config->ticks2Time(1);
+-        left_over_time -= num_steps * dt;
++        m_left_over_time -= num_steps * dt;
+ 
+         // Shutdown next frame if shutdown request is sent while loading the
+         // world
+@@ -659,7 +693,7 @@ void MainLoop::run()
+                     // Reset the timer for correct time for cutscene
+                     m_frame_before_loading_world = false;
+                     m_curr_time = std::chrono::steady_clock::now();
+-                    left_over_time = 0.0;
++                    m_left_over_time = 0.0;
+                     break;
+                 }
+ 
+@@ -691,7 +725,7 @@ void MainLoop::run()
+                     // irr_driver->getDevice()->run() loads the world
+                     m_frame_before_loading_world = false;
+                     m_curr_time = std::chrono::steady_clock::now();
+-                    left_over_time = 0.0;
++                    m_left_over_time = 0.0;
+                 }
+ 
+                 if (abort)
+@@ -737,14 +771,8 @@ void MainLoop::run()
+ 
+         PROFILER_POP_CPU_MARKER();   // MainLoop pop
+         PROFILER_SYNC_FRAME();
+-    }  // while !m_abort
+-
+-#ifdef WIN32
+-    if (parent != 0 && parent != INVALID_HANDLE_VALUE)
+-        CloseHandle(parent);
+-#endif
+-
+-}   // run
++    }
++}   // runFrame
+ 
+ // ----------------------------------------------------------------------------
+ /** Renders the GUI. This function is used during loading a track to get a
+diff --git a/src/main_loop.hpp b/src/main_loop.hpp
+index 1c153d5bc12d9c11e1159d07548e4d0efd339fd9..3ad7c25194eebacaca4b077e8e120138317e06cd 100644
+--- a/src/main_loop.hpp
++++ b/src/main_loop.hpp
+@@ -53,8 +53,12 @@ private:
+     TimePoint m_curr_time;
+     TimePoint m_prev_time;
+     unsigned m_parent_pid;
++    /** Leftover time between frames, since the race update happens in fixed
++     *  timesteps. */
++    double   m_left_over_time;
+     double   getLimitedDt();
+     void     updateRace(int ticks, bool fast_forward);
++    void     runFrame();
+     double   convertToTime(const TimePoint& cur, const TimePoint& prev) const
+     {
+         auto duration = cur - prev;

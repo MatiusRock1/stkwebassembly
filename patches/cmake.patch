@@ -1,0 +1,29 @@
+diff --git a/cmake/FindFreetype.cmake b/cmake/FindFreetype.cmake
+index 184d351684b64536d3d29936350bd1e87e5da484..68f4df4d3a7e0d384a2587415f1c99a67950b826 100644
+--- a/cmake/FindFreetype.cmake
++++ b/cmake/FindFreetype.cmake
+@@ -19,6 +19,11 @@ elseif(APPLE OR ${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
+     find_library(FREETYPE_LIBRARY NAMES freetype)
+     set(FREETYPE_FOUND 1)
+     set(FREETYPE_LIBRARIES ${FREETYPE_LIBRARY})
++elseif(EMSCRIPTEN)
++    # Emscripten port, FREETYPE_LIBRARY is set in Emscripten.cmake
++    set(FREETYPE_INCLUDE_DIRS ${FREETYPE_INCLUDE_DIR_freetype2})
++    set(FREETYPE_FOUND 1)
++    set(FREETYPE_LIBRARIES ${FREETYPE_LIBRARY})
+ else()
+     pkg_check_modules(FREETYPE freetype2)
+ endif()
+diff --git a/cmake/FindOggVorbis.cmake b/cmake/FindOggVorbis.cmake
+index a155494b2d70dab1b16d0107cf5b5b3e04e19384..04cf7f651a1c04cf6a7c2d9e0c62c08cf59b324d 100644
+--- a/cmake/FindOggVorbis.cmake
++++ b/cmake/FindOggVorbis.cmake
+@@ -10,7 +10,7 @@
+ #     OggVorbis library list
+ 
+ 
+-if((UNIX AND NOT APPLE) OR NINTENDO_SWITCH)
++if(((UNIX AND NOT APPLE) OR NINTENDO_SWITCH) AND NOT EMSCRIPTEN)
+     pkg_check_modules(OGGVORBIS vorbisfile)
+ else()
+ 

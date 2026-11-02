@@ -1,0 +1,39 @@
+diff --git a/lib/irrlicht/source/Irrlicht/CIrrDeviceSDL.cpp b/lib/irrlicht/source/Irrlicht/CIrrDeviceSDL.cpp
+index 9bbeb96b1935eef6279fad4413c8b62575b735d3..f4e0771b59173db18bad707430ed774f65ccc4fa 100644
+--- a/lib/irrlicht/source/Irrlicht/CIrrDeviceSDL.cpp
++++ b/lib/irrlicht/source/Irrlicht/CIrrDeviceSDL.cpp
+@@ -31,6 +31,16 @@
+ 
+ extern bool GLContextDebugBit;
+ 
++#ifdef __EMSCRIPTEN__
++static PFNGLMAPBUFFERRANGEPROC g_emscripten_map_buffer_range = NULL;
++static void* GLAD_API_PTR emscriptenMapBufferRange(GLenum target,
++	GLintptr offset, GLsizeiptr length, GLbitfield access)
++{
++	return g_emscripten_map_buffer_range(target, offset, length,
++		access & ~GL_MAP_UNSYNCHRONIZED_BIT);
++}
++#endif
++
+ namespace irr
+ {
+ 	namespace video
+@@ -538,7 +548,16 @@ start:
+ 	{
+ 		Context = SDL_GL_CreateContext(Window);
+ 		if (Context && gladLoadGLES2((GLADloadfunc)SDL_GL_GetProcAddress) != 0 &&
+-			versionCorrect(3, 0)) return;
++			versionCorrect(3, 0))
++		{
++#ifdef __EMSCRIPTEN__
++			// WebGL has no unsynchronized mapping: Emscripten emulates
++			// glMapBufferRange with a copy at unmap and rejects the flag.
++			g_emscripten_map_buffer_range = glad_glMapBufferRange;
++			glad_glMapBufferRange = emscriptenMapBufferRange;
++#endif
++			return;
++		}
+ 	}
+ 
+ #else

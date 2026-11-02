@@ -1,0 +1,65 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4e5618d8ed19fd9dcc769f8093f5b14d131c3cb0..82e0bd58e181372c0df88ba8aa6ca1e8ea8ab6f3 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -86,6 +86,10 @@ if (IOS)
+     option(USE_GLES2 "Use OpenGL ES2 renderer" ON)
+ endif()
+ 
++if(EMSCRIPTEN)
++    include(cmake/Emscripten.cmake)
++endif()
++
+ if((UNIX AND NOT APPLE) AND NOT SERVER_ONLY)
+     if((${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm") OR 
+        (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64") OR
+@@ -204,7 +208,7 @@ if(UNIX OR MINGW)
+     endif()
+ endif()
+ 
+-if(UNIX AND NOT APPLE AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
++if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
+     find_package(PkgConfig REQUIRED)
+ 
+     if(NOT PKGCONFIG_FOUND)
+@@ -222,7 +226,7 @@ if(USE_DNS_C)
+     add_subdirectory("${PROJECT_SOURCE_DIR}/lib/dnsc")
+     include_directories(BEFORE "${PROJECT_SOURCE_DIR}/lib/dnsc")
+ else()
+-    if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES "BSD" OR CMAKE_SYSTEM_NAME MATCHES "DragonFly" OR USE_SWITCH)
++    if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES "BSD" OR CMAKE_SYSTEM_NAME MATCHES "DragonFly" OR USE_SWITCH OR EMSCRIPTEN)
+         set(LIBRESOLV_LIBRARY)
+     elseif (HAIKU)
+         find_library(LIBRESOLV_LIBRARY NAMES network socket)
+@@ -567,6 +571,9 @@ if (USE_APPLE_NETWORK_LIBRARIES)
+         XCODE_ATTRIBUTE_DERIVED_FILE_DIR ${SWIFT_HEADER_DIR}
+     )
+     target_include_directories(cryptokit_wrapper INTERFACE ${SWIFT_HEADER_DIR})
++elseif(EMSCRIPTEN)
++    # HTTP goes through the browser's fetch API (http_request_emscripten.cpp)
++    set(CURL_LIBRARIES "-sFETCH=1")
+ else()
+     find_package(CURL REQUIRED)
+     include_directories(${CURL_INCLUDE_DIRS})
+@@ -641,6 +648,12 @@ else()
+     else()
+         add_executable(supertuxkart ${STK_SOURCES} ${STK_RESOURCES} ${STK_HEADERS})
+     endif()
++    if (EMSCRIPTEN)
++        set(PTHREAD_LIBRARY "-pthread")
++        # Produce supertuxkart.html + .js + .wasm
++        set_target_properties(supertuxkart PROPERTIES SUFFIX ".html")
++        target_link_options(supertuxkart PRIVATE ${STK_EMSCRIPTEN_LINK_FLAGS})
++    endif()
+     if (NOT WIN32)
+         target_link_libraries(supertuxkart ${PTHREAD_LIBRARY})
+     endif()
+@@ -919,7 +932,7 @@ endif()
+ 
+ 
+ # Find LibGamerzilla library or build it if missing
+-if (NOT APPLE)
++if (NOT APPLE AND NOT EMSCRIPTEN)
+     include(FindPkgConfig)
+     pkg_search_module(GAMERZILLA OPTIONAL gamerzilla)
+ 

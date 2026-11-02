@@ -1,0 +1,15 @@
+diff --git a/lib/graphics_engine/src/ge_gl_texture.cpp b/lib/graphics_engine/src/ge_gl_texture.cpp
+index 1774f28da8bd75b5a2b868a81cf98f53c14a57c7..615669216bf11f21e40c2fe5afe335a4a4547b6a 100644
+--- a/lib/graphics_engine/src/ge_gl_texture.cpp
++++ b/lib/graphics_engine/src/ge_gl_texture.cpp
+@@ -66,6 +66,10 @@ GEGLTexture::GEGLTexture(const std::string& name, unsigned int size,
+             texture_swizzle = true;
+         else
+             texture_swizzle = false;
++#ifdef __EMSCRIPTEN__
++        // WebGL 2 is OpenGL ES 3.0 without texture swizzle
++        texture_swizzle = false;
++#endif
+     }
+     else
+     {

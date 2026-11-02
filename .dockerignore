@@ -1,0 +1,4 @@
+# Context of wasm/server/Dockerfile: the source tree without build outputs.
+.git
+build-wasm/
+docs/

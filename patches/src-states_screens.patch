@@ -1,0 +1,165 @@
+diff --git a/src/states_screens/online/create_server_screen.cpp b/src/states_screens/online/create_server_screen.cpp
+index f5324f225d5077068819a5adcb060654f8a525a0..47a2262f09cd916c237c0e52993dd27f4ca1611f 100644
+--- a/src/states_screens/online/create_server_screen.cpp
++++ b/src/states_screens/online/create_server_screen.cpp
+@@ -39,6 +39,14 @@
+ #include "utils/string_utils.hpp"
+ #include "utils/translation.hpp"
+ 
++#ifdef __EMSCRIPTEN__
++#include "guiengine/engine.hpp"
++#include <emscripten/fetch.h>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#endif
++
+ #include <irrString.h>
+ 
+ #include <string>
+@@ -283,6 +291,116 @@ void CreateServerScreen::onUpdate(float delta)
+     NetworkingLobby::getInstance()->push();
+ }   // onUpdate
+ 
++#ifdef __EMSCRIPTEN__
++// ----------------------------------------------------------------------------
++/** A browser cannot host a server that other players reach, so the server of
++ *  the site starts the room (wasm/server/relay.py, at STK_ROOMS_URL) and this
++ *  player joins it like a server of the LAN list. */
++namespace
++{
++    struct WebRoomRequest
++    {
++        irr::core::stringw m_name;
++        int m_max_players, m_difficulty;
++        std::string m_password;
++    };
++
++    std::string queryValue(const std::string& value)
++    {
++        std::string encoded;
++        for (unsigned char c : value)
++        {
++            if (isalnum(c) || c == '-' || c == '_' || c == '.')
++                encoded += c;
++            else
++                {
++                char hex[4];
++                snprintf(hex, sizeof(hex), "%%%02X", c);
++                encoded += hex;
++            }
++        }
++        return encoded;
++    }
++
++    void webRoomDone(emscripten_fetch_t* fetch)
++    {
++        WebRoomRequest* request = (WebRoomRequest*)fetch->userData;
++        int port = 0;
++        if (fetch->status == 200 && fetch->numBytes > 0)
++            port = atoi(std::string(fetch->data, fetch->numBytes).c_str());
++        emscripten_fetch_close(fetch);
++        CreateServerScreen* screen = CreateServerScreen::getInstance();
++        if (GUIEngine::getCurrentScreen() == screen && !STKHost::existHost())
++        {
++            if (port <= 0)
++            {
++                //I18N: In the create server screen of the browser version
++                screen->getWidget<LabelWidget>("info")->setText(
++                    _("The server could not start the room, try again later."),
++                    false);
++                SFXManager::get()->quickSound("anvil");
++            }
++            else
++            {
++                auto server = std::make_shared<Server>(0/*server_id*/,
++                    request->m_name, request->m_max_players,
++                    /*current_player*/0,
++                    (RaceManager::Difficulty)request->m_difficulty, 0,
++                    SocketAddress(0x7f000001, port),
++                    !request->m_password.empty(), false);
++                ServerConfig::m_private_server_password = request->m_password;
++                // onUpdate() enters the lobby once the host exists
++                STKHost::create();
++                NetworkingLobby::getInstance()->setJoinedServer(server);
++            }
++        }
++        delete request;
++    }
++}   // namespace
++
++// ----------------------------------------------------------------------------
++void CreateServerScreen::requestWebRoom(const irr::core::stringw& name,
++                                        int max_players,
++                                        const std::string& password,
++                                        int mode, int difficulty, int ai)
++{
++    const char* rooms = getenv("STK_ROOMS_URL");
++    if (!rooms || !*rooms)
++    {
++        //I18N: In the create server screen of the browser version
++        m_info_widget->setText(
++            _("This site does not offer servers for players."), false);
++        SFXManager::get()->quickSound("anvil");
++        return;
++    }
++    std::string url = std::string(rooms) + "rooms/create?name=" +
++        queryValue(StringUtils::wideToUtf8(name)) + "&players=" +
++        StringUtils::toString(max_players) + "&mode=" +
++        StringUtils::toString(mode) + "&difficulty=" +
++        StringUtils::toString(difficulty) + "&ai=" +
++        StringUtils::toString(ai) + "&password=" + queryValue(password);
++
++    WebRoomRequest* request = new WebRoomRequest();
++    request->m_name = name;
++    request->m_max_players = max_players;
++    request->m_difficulty = difficulty;
++    request->m_password = password;
++
++    emscripten_fetch_attr_t attr;
++    emscripten_fetch_attr_init(&attr);
++    strcpy(attr.requestMethod, "GET");
++    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
++    attr.userData = request;
++    attr.onsuccess = webRoomDone;
++    attr.onerror = webRoomDone;
++    attr.timeoutMSecs = 70000;
++    emscripten_fetch(&attr, url.c_str());
++    m_info_widget->setDefaultColor();
++    //I18N: In the create server screen of the browser version
++    m_info_widget->setText(_("Starting the room on the server..."), false);
++}   // requestWebRoom
++#endif
++
+ // ----------------------------------------------------------------------------
+ /** In case of WAN it adds the server to the list of servers. In case of LAN
+  *  networking, it registers this game server with the stk server.
+@@ -357,6 +475,12 @@ void CreateServerScreen::createServer()
+     auto sl = STKHost::create();
+     assert(sl);
+     sl->requestStart();
++#elif defined(__EMSCRIPTEN__)
++    requestWebRoom(name, max_players, password,
++        gamemode_widget->getSelection(PLAYER_ID_GAME_MASTER),
++        difficulty_widget->getSelection(PLAYER_ID_GAME_MASTER),
++        m_more_options_spinner->isVisible() && m_supports_ai ?
++        m_more_options_spinner->getValue() : 0);
+ #else
+ 
+     NetworkConfig::get()->setIsServer(false);
+diff --git a/src/states_screens/online/create_server_screen.hpp b/src/states_screens/online/create_server_screen.hpp
+index e396c4597e8bf2ec680fb1b972da8a4205113231..c7e9fcdf8f04fd8fe18fd506f9ea7826575ed99a 100644
+--- a/src/states_screens/online/create_server_screen.hpp
++++ b/src/states_screens/online/create_server_screen.hpp
+@@ -57,6 +57,11 @@ private:
+ 
+     void createServer();
+     void updateMoreOption(int game_mode);
++#ifdef __EMSCRIPTEN__
++    void requestWebRoom(const irr::core::stringw& name, int max_players,
++                        const std::string& password, int mode,
++                        int difficulty, int ai);
++#endif
+ 
+ public:
+ 
