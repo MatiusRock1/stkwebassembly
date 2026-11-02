@@ -55,7 +55,7 @@ Edit `src/`, `lib/`, `cmake/`, `data/` or `wasm/` directly and review changes wi
 
 `patches/` records the former overlay. Do not reapply those patches to the current tree: their changes are already present. Updating upstream requires reviewing and testing changes to the game, port and assets pinned in `wasm/assets.json`; changing only `BASE_COMMIT.txt` does not update the sources.
 
-The official `stk-code` clone remains intact. The old `stk-wasm` path is now a compatibility junction to this repository, without a duplicate source tree. The [migration note](docs/wasm/unified-repository.md) identifies two divergent changes in `stk-code` that were not merged automatically.
+The official `stk-code` clone remains intact. The duplicate `stk-wasm` tree has been removed after preserving its local files here. The [migration note](docs/wasm/unified-repository.md) identifies two divergent changes in `stk-code` that were not merged automatically.
 
 ## Deployment and multiplayer
 

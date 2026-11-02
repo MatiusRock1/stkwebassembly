@@ -21,7 +21,7 @@ An `export` step is no longer required to bring edits into the repository. `patc
 
 ## Preserved local changes
 
-The official `stk-code/` clone remains intact, including its independent changes. Unique local files from `stk-wasm/` have been transferred here; conflicting versions and old metadata are retained under `.git/local-integration-backups/`. The old `stk-wasm/` path now redirects to this repository.
+The official `stk-code/` clone remains intact, including its independent changes. Unique local files from `stk-wasm/` have been transferred here; conflicting versions and old metadata are retained under `.git/local-integration-backups/`. The old `stk-wasm/` path has been removed.
 
 The audit found two modified files in `stk-code/` whose contents differ from the reference `stk-wasm/` tree:
 
@@ -38,4 +38,4 @@ This note describes a source-tree migration. It does not claim a new full build,
 
 ## Retiring the duplicate worktree
 
-The old `stk-wasm` worktree is retired after its local files are transferred to this repository. Its old path becomes a compatibility junction to `stkwebassembly`, not a second engine copy. Conflicting files and old metadata are backed up under `.git/local-integration-backups/`. The official `stk-code` clone and its independent changes remain untouched.
+The old `stk-wasm` worktree is retired after its local files are transferred to this repository. The old path is removed; use `stkwebassembly` directly. Conflicting files and old metadata are backed up under `.git/local-integration-backups/`. The official `stk-code` clone and its independent changes remain untouched.
