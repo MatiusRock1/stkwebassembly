@@ -11,21 +11,25 @@ const fullscreenButton = document.querySelector('#fullscreen');
 const closeButton = document.querySelector('#close');
 
 const query = new URL(location.href).searchParams;
+// Parameters that change what the page loads or runs only count on a local
+// server, so a shared link cannot reach them on the public site.
+const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+const devParam = name => local ? query.get(name) : null;
 // ?engine= overrides the engine directory a deployment writes into the page.
-const engineBase = new URL(query.get('engine') ||
+const engineBase = new URL(devParam('engine') ||
   document.querySelector('meta[name="engine-base"]')?.content || './', location.href).href;
 // The data package (stk-data.data) may live elsewhere, for example on a CDN
 // that allows this site with CORS: <meta name="stk-data"> or ?data= names it.
-const dataSetting = query.get('data') || document.querySelector('meta[name="stk-data"]')?.content;
+const dataSetting = devParam('data') || document.querySelector('meta[name="stk-data"]')?.content;
 const dataURL = dataSetting ? new URL(dataSetting, location.href).href : null;
 // Network play: the game's sockets reach its server through a WebSocket relay
 // (wasm/server/relay.py) named by <meta name="stk-net"> or ?net=. Emscripten
 // opens ws://<address>:<port>/ for each destination; those connections go to
 // <relay>/<address>/<port>, so the game's own LAN menu finds the server.
 // ?online=1 joins it directly.
-const netSetting = query.get('net') || document.querySelector('meta[name="stk-net"]')?.content;
+const netSetting = devParam('net') || document.querySelector('meta[name="stk-net"]')?.content;
 const netURL = netSetting ? new URL(netSetting, location.href).href.replace(/^http/, 'ws') : null;
-const online = netURL && query.get('online') === '1';
+const online = netURL && devParam('online') === '1';
 if (netURL) {
   const NativeWebSocket = window.WebSocket;
   const relay = netURL.replace(/\/?$/, '/');
@@ -133,7 +137,7 @@ startButton.addEventListener('click', async () => {
     // ?args= appends engine options, e.g. ?args=--race-now --track=lighthouse
     arguments: ['--screensize=1280x720', '--windowed', '--log=nocolor',
       ...(online ? ['--connect-now=10.0.0.1:2759'] : []),
-      ...(query.get('args') || '').split(' ').filter(Boolean)],
+      ...(devParam('args') || '').split(' ').filter(Boolean)],
     websocket: netURL ? { url: 'ws://', subprotocol: 'binary' } : {},
     locateFile: path => path === 'stk-data.data' && dataURL ? dataURL : new URL(path, engineBase).href,
     print: record,

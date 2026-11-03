@@ -65,7 +65,7 @@ To deploy the web package, copy `<work>/web/` to your web server; Demos-Games se
 
 ```text
 docker buildx build -f wasm/server/Dockerfile --build-context work=<work> -t stk-server .
-docker run -p 8081:8081 -p 2759:2759/udp stk-server
+docker run -p 8081:8081 -p 2759:2759/udp -e STK_ALLOWED_ORIGINS=https://example.com stk-server
 ```
 
 The player accepts the `net` query parameter for the relay URL and `online=1`, or the online-play button when the page includes `<meta name="stk-net">`. A relay implementation does not prove that an online match has been validated; see [port.md](docs/wasm/port.md) for results and limitations.

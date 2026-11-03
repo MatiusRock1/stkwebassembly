@@ -36,5 +36,7 @@ COPY --from=build /stk /stk
 COPY wasm/server/relay.py /opt/stk/relay.py
 COPY --chmod=755 wasm/server/entrypoint.sh /opt/stk/entrypoint.sh
 ENV SUPERTUXKART_DATADIR=/stk HOME=/config
+RUN useradd --system --home-dir /config stk && mkdir -p /config/rooms && chown -R stk /config
+USER stk
 EXPOSE 8081/tcp 2759/udp
 ENTRYPOINT ["/opt/stk/entrypoint.sh"]
